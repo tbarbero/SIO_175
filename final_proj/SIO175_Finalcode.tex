@@ -1,0 +1,373 @@
+% This LaTeX was auto-generated from MATLAB code.
+% To make changes, update the MATLAB code and export to LaTeX again.
+
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{epstopdf}
+\usepackage[table]{xcolor}
+\usepackage{matlab}
+
+\sloppy
+\epstopdfsetup{outdir=./}
+\graphicspath{ {./SIO175_Finalcode_images/} }
+
+\begin{document}
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Tyler Barbero}}
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{SIO175 Final Project (code)}}
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Topic: Jet Streams and Regional Weather Influenced by Modes of Climate}}
+\end{flushleft}
+\end{par}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Load data}}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+clear;clc;close
+\end{matlabcode}
+
+\begin{par}
+\begin{flushleft}
+\texttt{Coastline overlay}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+load('coast_hi_res.mat')
+\end{matlabcode}
+
+\begin{par}
+\begin{flushleft}
+\texttt{AO data}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+ao = readtable('monthly_AO.txt'); 
+\end{matlabcode}
+
+\begin{par}
+\begin{flushleft}
+\texttt{ENSO data and clean up}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+nino = importdata('nina34.data.txt',' ',1);
+nino = nino.data;
+nino(1:2,:) = [];
+nino(72,:) = [];
+ninodata = nino(:,2:13)';
+ninodata = ninodata(:); % concat columns into 1-d array
+\end{matlabcode}
+
+\begin{par}
+\begin{flushleft}
+\texttt{250hpa surface wspd data and clean up}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+tmp = ncread('data1.nc','u');
+wspd = squeeze(tmp(:,:,9,:)); % index 9 is 250hpa
+lon = ncread('data1.nc','X');
+lat = ncread('data1.nc','Y');
+mnths = double(ncread('data1.nc','T')); % months since 1960-01-01 
+% want to get months since 1950 Jan 1 instead
+% get time array of months since Jan 1950 in datenum
+for i=1:length(mnths)
+time(i) = addtodate(datenum(1960,1,1,12,0,0),floor(mnths(i)),'month'); 
+end
+time = time';
+\end{matlabcode}
+
+\begin{par}
+\begin{flushleft}
+\texttt{Find largest common time array between AO, ENSO and WSPD.}
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+\texttt{It is the AO index which spans Jan 1950 to Oct 2020 (850x1 months)}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+tnino = datenum(1950,(1:852)',1);
+knino = find(tnino>=tnino(1) & tnino<=time(end)); 
+kwind = find(time>=tnino(1) & time<=time(end));
+wspd = wspd(:,:,kwind); 
+time = time(kwind);
+ninodata = ninodata(knino);
+ao = ao.Var3;
+clearvars nino kwind tnino knino mnths tmp p i
+\end{matlabcode}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Take out mean and seasonal cycle from wspd at each grid point to get wspd anomaly}}\texttt{.}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+arg = 2*pi*time/12;
+xx = [ones(numel(time),1) cos(arg) sin(arg)];
+bb = NaN(3,numel(lon),numel(lat));
+for i=1:numel(lon)
+    for j=1:numel(lat)
+        bb(:,i,j) = regress(squeeze(wspd(i,j,:)),xx);
+    end
+end
+wspd_anom = NaN(numel(lon),numel(lat),numel(time));
+for i=1:numel(lon)
+    for j=1:numel(lat)
+    tmp = xx*squeeze(bb(:,i,j));
+%   850x1 = 850x3 * 3x1 
+    wspd_anom(i,j,:) = squeeze(wspd(i,j,:))-tmp;
+    end
+end
+\end{matlabcode}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Regress wind speed anomalies with AO, ENSO time series}}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+b = NaN(numel(lon),numel(lat),3);
+x = [ninodata ao ones(850,1)];
+for i=1:numel(lat)
+    for j=1:numel(lon)
+        tmp = squeeze(double(wspd_anom(j,i,:)));
+        b(j,i,:) = regress(tmp(:),x);
+    end
+end
+\end{matlabcode}
+
+\begin{par}
+\begin{flushleft}
+\texttt{Also get }\texttt{\textbf{correlation coefficients}}\texttt{, to see how good wind speed and the respective time series correlate!}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+c1 = NaN(144,73); % ENSO correlation coeff
+c2 = NaN(144,73); % AO correlation coeff
+for i=1:numel(lat)
+    for j=1:numel(lon)
+        tmp = corrcoef(wspd_anom(j,i,:),ninodata);
+        c1(j,i) = tmp(1,2);
+        tmp = corrcoef(wspd_anom(j,i,:),ao);
+        c2(j,i) = tmp(1,2);
+    end
+end
+\end{matlabcode}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{Rearrange }\texttt{\textbf{coast contours}}\texttt{ }\texttt{\textbf{data,}}\texttt{ }\texttt{\textbf{wspd-AO regression coefficients, }}\texttt{and }\texttt{\textbf{wspd-AO correlation coefficients }}\texttt{to center Arctic Oscillation plot}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+% coast contour data 
+xc2 = xc; yc2 = yc;
+k = find(xc<=180);
+xc2(k) = xc2(k)+180;
+kk = find(xc>180);
+xc2(kk) = xc2(kk)-180;
+% AO-wspd regression data 
+m1 = find(lon<=180);
+m2 = find(lon>180);
+b2 = [b(m2,:,2);b(m1,:,2)];
+% AO-wspd correlation data
+c2 = [c2(m2:end,:);c2(1:m2-1,:)];
+clearvars i j k kk m1 m2 tmp 
+\end{matlabcode}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Plot ENSO maps (regression + correlation)}}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+figure(1)
+clf
+subplot(2,1,1)
+pcolor(lon,lat,squeeze(b(:,:,1))');hold on
+shading interp
+cc = colorbar;
+ylabel(cc,'Wspd-Modal multiplier')
+caxis([-3 3])
+title('Regression ENSO')
+xlabel('Longitude (E)')
+ylabel('Latitude (N)')
+xticks([0:57.5:357.5])
+xticklabels([0 60 120 180 -120 -60 0])
+scatter(xc,yc,0.01,'.','k')
+subplot(2,1,2)
+pcolor(lon,lat,c1');hold on
+shading interp
+cc = colorbar;
+ylabel(cc,'Correlation')
+title('Correlation ENSO')
+xlabel('Longitude (E)')
+ylabel('Latitude (N)')
+xticks([0:57.5:357.5])
+xticklabels([0 60 120 180 -120 -60 0])
+scatter(xc,yc,0.01,'.','k')
+\end{matlabcode}
+\begin{center}
+\includegraphics[width=\maxwidth{72.25288509784245em}]{figure_0}
+\end{center}
+\begin{matlabcode}
+% set(gcf, 'Units', 'Normalized', 'OuterPosition', [0.15, 0.3, 0.5, 0.7]);
+% saveas(gcf,'/Users/tyler/Desktop/FA20/SIO175/final_proj/figs/ENSO.png')
+\end{matlabcode}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Plot AO maps (regression + correlation)}}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+figure(2)
+clf
+subplot(2,1,1)
+pcolor(lon,lat,b2');hold on
+shading interp
+cc = colorbar;
+ylabel(cc,'Wspd-Modal multiplier')
+caxis([-3 3])
+title('Regression AO')
+xlabel('Longitude (E)')
+ylabel('Latitude (N)')
+xticks([lon(1):57.5:lon(end)])
+xticklabels([-180 -120 -60 0 60 120 180])
+scatter(xc2,yc2,0.01,'.','k')
+subplot(2,1,2)
+pcolor(lon,lat,c2');hold on
+shading interp
+cc = colorbar;
+ylabel(cc,'Correlation')
+title('Correlation AO')
+xlabel('Longitude (E)')
+ylabel('Latitude (N)')
+xticks([lon(1):57.5:lon(end)])
+xticklabels([-180 -120 -60 0 60 120 180])
+scatter(xc2,yc2,0.01,'.','k')
+\end{matlabcode}
+\begin{center}
+\includegraphics[width=\maxwidth{72.25288509784245em}]{figure_1}
+\end{center}
+\begin{matlabcode}
+set(gcf, 'Units', 'Normalized', 'OuterPosition', [0.15, 0.3, 0.5, 0.7]);
+\end{matlabcode}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Plot mean wind speed map during El Nino and La Nina}}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+figure(3)
+clf
+% load in another data set to easily find el nino events vs la nina events
+oni = readtable('oni.ascii.txt');
+oni = oni.ANOM;
+pos = find(oni>0);
+neg = find(oni<0);
+pwspd = mean(wspd_anom(:,:,pos),3); 
+nwspd = mean(wspd_anom(:,:,neg),3);
+subplot(2,1,1)
+pcolor(lon,lat,pwspd');hold on
+shading interp
+title('Mean 250hPa Wind speed during El Nino')
+c = colorbar;
+ylabel(c,'(m/s)')
+xticks([0:57.5:357.5])
+xticklabels([0 60 120 180 -120 -60 0])
+scatter(xc,yc,1,'k')
+subplot(2,1,2)
+pcolor(lon,lat,nwspd');hold on
+shading interp
+title('Mean 250hPa Wind speed during La Nina')
+c = colorbar;
+ylabel(c,'(m/s)')
+scatter(xc,yc,1,'k')
+\end{matlabcode}
+\begin{center}
+\includegraphics[width=\maxwidth{72.25288509784245em}]{figure_2}
+\end{center}
+\begin{matlabcode}
+% set(gcf, 'Units', 'Normalized', 'OuterPosition', [0.15, 0.3, 0.5, 0.7]);
+clearvars c cc i j neg pos nwspd pwspd oni tmp 
+\end{matlabcode}
+
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Test single linear regression vs multiple}}
+\end{flushleft}
+\end{par}
+
+\begin{par}
+\begin{flushleft}
+\texttt{\textbf{Plots look the same}}
+\end{flushleft}
+\end{par}
+
+\begin{matlabcode}
+% figure(4);clf
+% btmp = NaN(numel(lon),numel(lat),2);
+% x = [ninodata ones(850,1)];
+% for i=1:numel(lat)
+%     for j=1:numel(lon)
+%         tmp = squeeze(double(wspd_anom(j,i,:)));
+%         btmp(j,i,:) = regress(tmp(:),x);
+%     end
+% end
+% pcolor(lon,lat,squeeze(btmp(:,:,1))')
+% shading interp
+% colorbar
+% hold on
+% scatter(xc,yc,0.01,'k')
+\end{matlabcode}
+
+\end{document}
